@@ -1,0 +1,29 @@
+BODY {
+  font-family: Verdana;
+}
+#points, #clusters {
+  display: block;
+  position: absolute;
+  left: 50%;
+  margin-left: -300px;
+}
+#points {
+  border: 1px solid black;
+  width: 600px;
+  height: 600px;
+  padding: 5px;
+  font-size: 6px;
+}
+#clusters {
+  border: 1px solid black;
+  width: 600px;
+  height: 600px;
+  padding: 5px;
+  font-size: 12px;
+  font-weight: bold;
+}
+#clusters DIV {
+  background: #FFFFFF;
+  border: 1px solid black;
+  padding: 2px;
+}
