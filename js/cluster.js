@@ -1,10 +1,9 @@
 var cluster = {
   consts: {
-           COLORS: ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#33AA88', '#FF8800', '#0088FF', '#003333', '#AA00AA', '#8800FF'],
-     POINTS_COUNT: 10000,
+     POINTS_COUNT: 20000,
     CLUSTER_COUNT: 10,
         MAX_STEPS: 500,
-     MAX_TIME_SEC: 200.0,
+     MAX_TIME_SEC: 2090.0,
     INTERVAL_STEP: 1
   },
   points: [],
@@ -12,49 +11,72 @@ var cluster = {
   ivl: 0,
   startTime: 0,
   steps: 0,
+	renderer: {},
+
+	start: function(renderer, params) {
+		this.setDefaults(params);
+
+		this.renderer = renderer
+
+    this.initClusters();
+    this.initPoints();
+    this.calcClusters();
+    this.positionClusters();
+
+    this.startTime = new Date().getTime();
+
+    this.clusterStep(this);
+		var instance = this
+    this.ivl = setInterval(function () {
+			instance.clusterStep(instance)
+		}, this.intervalStep);
+  },
+
+	setDefaults: function(params) {
+		var fields = ['pointsCount', 'clusterCount', 'maxSteps', 'maxTimeSec', 'intervalStep']
+		var defaults = {
+				pointsCount: this.consts.POINTS_COUNT,
+				clusterCount: this.consts.CLUSTER_COUNT,
+				maxSteps: this.consts.MAX_STEPS,
+				maxTimeSec: this.consts.MAX_TIME_SEC,
+				intervalStep: this.consts.INTERVAL_STEP
+			};
+		fields.forEach(field => {
+			if (params && params[field]) {
+				this[field] = params[field]
+			} else {
+				this[field] = defaults[field]
+			}
+		});
+	},
 
   initClusters: function() {
-    var clustersDIV = $('#clusters');
-
-    for (var i = cluster.consts.CLUSTER_COUNT - 1; i >= 0; i += -1) {
-      var div = $('<DIV></DIV>');
-      div
-        .css({ position: 'absolute',
-                display: 'block',
-                  color: cluster.consts.COLORS[i]
-             })
-        .text(i + 1)
-        .attr('id', 'c' + i);
-      clustersDIV.append(div);
-      cluster.clusters.unshift({ count: 0, x: 0, y: 0, sumX: 0, sumY: 0, div: div });
+    for (var clusterID = this.clusterCount - 1; clusterID >= 0; clusterID += -1) {
+			var label = this.renderer.newClusterLabel(clusterID);
+      this.clusters.unshift({ count: 0, x: 0, y: 0, sumX: 0, sumY: 0, label: label });
     }
   },
 
   initPoints: function() {
     // Get container for all points
-    var pointsDIV = $('#points');
 
-    for (var i = cluster.consts.POINTS_COUNT - 1; i >= 0; i += -1) {
+    for (var i = this.pointsCount - 1; i >= 0; i += -1) {
       // Assign a point to each cluster to divide them evenly.
-      var clusterID = i % cluster.consts.CLUSTER_COUNT;
-      var div = $('<DIV></DIV>');
-      var point = {
-          x: Math.round(Math.random() * 600) + 2,
-          y: Math.round(Math.random() * 600) + 2,
-          cluster: clusterID,
-          div: div
-        };
-      div
-        .css({ position: 'absolute',
-                   left: point.x,
-                    top: point.y,
-                  color: cluster.consts.COLORS[clusterID] })
-        .text('o')
-        .attr('id', 'p' + i);
-      pointsDIV.append(div);
-      cluster.points.push(point);
+      var clusterID = i % this.clusterCount;
 
-      var curCluster = cluster.clusters[clusterID];
+
+
+			var point = {
+			          x: Math.round(Math.random() * 600) + 2,
+			          y: Math.round(Math.random() * 600) + 2,
+			          cluster: clusterID
+							};
+
+      var item = this.renderer.newItem(point, clusterID);
+			point.item = item
+      this.points.push(point);
+
+      var curCluster = this.clusters[clusterID];
       // Update the points average formula components for the cluster
       ++curCluster.count;
       curCluster.sumX += point.x;
@@ -62,48 +84,36 @@ var cluster = {
     }
   },
 
-  start: function() {
-    cluster.initClusters();
-    cluster.initPoints();
-    cluster.calcClusters();
-    cluster.positionClusters();
-
-    cluster.startTime = new Date().getTime();
-
-    cluster.clusterStep();
-    cluster.ivl = setInterval(cluster.clusterStep, cluster.consts.INTERVAL_STEP);
-  },
-
   clusterStep: function() {
     // Reassign all points to clusters and report if any points moved.
-    var moved = cluster.recluster();
-    ++cluster.steps;
-    var timeElapsed = ((new Date().getTime() - cluster.startTime) / 1000);
+    var moved = this.recluster();
+    ++this.steps;
+    var timeElapsed = ((new Date().getTime() - this.startTime) / 1000);
 
     // Comment the following two lines to skip updates during the process
     // and speed things up.
-    cluster.positionClusters();
+    this.positionClusters();
 
     // If we're done or hit one of our set limits, stop.
     if (moved == 0 ||
-        cluster.steps == cluster.consts.MAX_STEPS ||
-        timeElapsed >= cluster.consts.MAX_TIME_SEC) {
+        this.steps == this.maxSteps ||
+        timeElapsed >= this.maxTimeSec) {
       clearInterval(cluster.ivl);
 
       // Update the results to screen.
-      cluster.paintPoints();
-      cluster.positionClusters();
+      this.paintPoints();
+      this.positionClusters();
 
-      alert('Done in ' + timeElapsed + ' seconds.\nSteps: ' + cluster.steps);
+      alert('Done in ' + timeElapsed + ' seconds.\nSteps: ' + this.steps);
     }
   },
 
   recluster: function() {
     var moved = 0;
 
-    for (var i = cluster.consts.POINTS_COUNT - 1; i >= 0; i += -1) {
-      var point = cluster.points[i];
-      var curCluster = cluster.clusters[point.cluster];
+    for (var i = this.pointsCount - 1; i >= 0; i += -1) {
+      var point = this.points[i];
+      var curCluster = this.clusters[point.cluster];
       // If the cluster only has one point left - don't move the point.
       // Otherwise, we lose that cluster.
       if (curCluster.count <= 1) continue;
@@ -117,10 +127,10 @@ var cluster = {
       var curClusterID = point.cluster;
       var targetCluster = -1;
 
-      for (var j = cluster.consts.CLUSTER_COUNT - 1; j >= 0; j += -1) {
+      for (var j = this.clusterCount - 1; j >= 0; j += -1) {
         if (j == curClusterID) continue;
 
-        var newCluster = cluster.clusters[j];
+        var newCluster = this.clusters[j];
 
         dX = point.x - newCluster.x;
         dY = point.y - newCluster.y;
@@ -140,10 +150,10 @@ var cluster = {
         curCluster.sumY += -point.y;
 
         point.cluster = targetCluster;
-        point.div.css('color', cluster.consts.COLORS[targetCluster]);
+				point.item.setCluster(targetCluster);
 
         // Update our pointer to the new cluster
-        curCluster = cluster.clusters[point.cluster];
+        curCluster = this.clusters[point.cluster];
         // Update the points average formula components for the new cluster
         ++curCluster.count;
         curCluster.sumX += point.x;
@@ -153,14 +163,14 @@ var cluster = {
       }
     }
 
-    if (moved != 0) cluster.calcClusters();
+    if (moved != 0) this.calcClusters();
 
     return moved;
   },
 
   calcClusters: function() {
-    for (var i = cluster.consts.CLUSTER_COUNT - 1; i >= 0; i += -1) {
-      var curCluster = cluster.clusters[i];
+    for (var i = this.clusterCount - 1; i >= 0; i += -1) {
+      var curCluster = this.clusters[i];
       var count = curCluster.count;
       curCluster.x = curCluster.sumX / count;
       curCluster.y = curCluster.sumY / count;
@@ -168,22 +178,16 @@ var cluster = {
   },
 
   paintPoints: function() {
-    for (var i = cluster.consts.POINTS_COUNT - 1; i >= 0; i += -1) {
-      var point = cluster.points[i];
-      point.div.css('color', cluster.consts.COLORS[point.cluster]);
+    for (var i = this.pointsCount - 1; i >= 0; i += -1) {
+      var point = this.points[i];
+			point.item.setCluster(point.cluster);
     }
   },
 
   positionClusters: function() {
-    for (var i = cluster.consts.CLUSTER_COUNT - 1; i >= 0; i += -1) {
-      var curCluster = cluster.clusters[i];
-      curCluster.div
-        .css({ left: Math.round(curCluster.x), top: Math.round(curCluster.y) })
-        .text(curCluster.count);
+    for (var i = this.clusterCount - 1; i >= 0; i += -1) {
+      var curCluster = this.clusters[i];
+      curCluster.label.set(curCluster, curCluster.count)
     }
   }
 };
-
-$(document).ready(function () {
-    cluster.start();
-  });
