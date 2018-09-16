@@ -1,4 +1,6 @@
-$(document).ready(function () {
+function startClustering() {
+	$('#startButton').hide();
+
 	var clustersDIV = $('#clusters');
 	var pointsDIV = $('#points');
 	var colors = ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#33AA88', '#FF8800', '#0088FF', '#003333', '#AA00AA', '#8800FF'];
@@ -44,6 +46,14 @@ $(document).ready(function () {
 					this.div.css('color', colors[clusterID]);
 				}
 			};
+		},
+
+		willUpdateItems: function () {},
+
+		updatedItems: function () {},
+
+		onComplete: function (timeElapsed, steps) {
+			setTimeout(function () { alert('Done in ' + timeElapsed + ' seconds.\nSteps: ' + steps); }, 100);
 		}
 	});
-});
+}

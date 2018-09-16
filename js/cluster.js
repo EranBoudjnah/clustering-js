@@ -8,7 +8,7 @@ var cluster = {
   },
   points: [],
   clusters: [],
-  ivl: 0,
+  interval: 0,
   startTime: 0,
   steps: 0,
 	renderer: {},
@@ -21,13 +21,13 @@ var cluster = {
     this.initClusters();
     this.initPoints();
     this.calcClusters();
-    this.positionClusters();
+    this.positionClusterLabels();
 
     this.startTime = new Date().getTime();
 
     this.clusterStep(this);
 		var instance = this
-    this.ivl = setInterval(function () {
+    this.interval = setInterval(function () {
 			instance.clusterStep(instance)
 		}, this.intervalStep);
   },
@@ -90,23 +90,35 @@ var cluster = {
     ++this.steps;
     var timeElapsed = ((new Date().getTime() - this.startTime) / 1000);
 
+		this.renderer.willUpdateItems();
+
     // Comment the following two lines to skip updates during the process
     // and speed things up.
-    this.positionClusters();
+    this.positionClusterLabels();
+
+		this.renderer.updatedItems();
 
     // If we're done or hit one of our set limits, stop.
     if (moved == 0 ||
         this.steps == this.maxSteps ||
         timeElapsed >= this.maxTimeSec) {
-      clearInterval(cluster.ivl);
-
-      // Update the results to screen.
-      this.paintPoints();
-      this.positionClusters();
-
-      alert('Done in ' + timeElapsed + ' seconds.\nSteps: ' + this.steps);
+					this.finalizeClustering(timeElapsed);
     }
   },
+
+	finalizeClustering: function (timeElapsed) {
+		clearInterval(this.interval);
+
+		// Update the results to screen.
+		var item = this
+		setTimeout(function () {
+			item.renderer.willUpdateItems();
+			item.setClusterForItems();
+			item.positionClusterLabels();
+
+			item.renderer.onComplete(timeElapsed, item.steps);
+		}, 1);
+	},
 
   recluster: function() {
     var moved = 0;
@@ -177,14 +189,14 @@ var cluster = {
     }
   },
 
-  paintPoints: function() {
+  setClusterForItems: function() {
     for (var i = this.pointsCount - 1; i >= 0; i += -1) {
       var point = this.points[i];
 			point.item.setCluster(point.cluster);
     }
   },
 
-  positionClusters: function() {
+  positionClusterLabels: function() {
     for (var i = this.clusterCount - 1; i >= 0; i += -1) {
       var curCluster = this.clusters[i];
       curCluster.label.set(curCluster, curCluster.count)
