@@ -1,189 +1,417 @@
-var cluster = {
-  consts: {
-           COLORS: ['#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#33AA88', '#FF8800', '#0088FF', '#003333', '#AA00AA', '#8800FF'],
-     POINTS_COUNT: 10000,
+var cluster = (function () {
+  var cache = {}
+  var defaults = {
+    COLORS: [
+      "#FF0000", "#00FF00", "#0000FF", "#FF00FF",
+      "#33AA88", "#FF8800", "#0088FF", "#003333",
+      "#AA00AA", "#8800FF"
+    ],
+    ITEMS_COUNT: 10000,
     CLUSTER_COUNT: 10,
-        MAX_STEPS: 500,
-     MAX_TIME_SEC: 200.0,
-    INTERVAL_STEP: 1
-  },
-  points: [],
-  clusters: [],
-  ivl: 0,
-  startTime: 0,
-  steps: 0,
-
-  initClusters: function() {
-    var clustersDIV = $('#clusters');
-
-    for (var i = cluster.consts.CLUSTER_COUNT - 1; i >= 0; i += -1) {
-      var div = $('<DIV></DIV>');
-      div
-        .css({ position: 'absolute',
-                display: 'block',
-                  color: cluster.consts.COLORS[i]
-             })
-        .text(i + 1)
-        .attr('id', 'c' + i);
-      clustersDIV.append(div);
-      cluster.clusters.unshift({ count: 0, x: 0, y: 0, sumX: 0, sumY: 0, div: div });
-    }
-  },
-
-  initPoints: function() {
-    // Get container for all points
-    var pointsDIV = $('#points');
-
-    for (var i = cluster.consts.POINTS_COUNT - 1; i >= 0; i += -1) {
-      // Assign a point to each cluster to divide them evenly.
-      var clusterID = i % cluster.consts.CLUSTER_COUNT;
-      var div = $('<DIV></DIV>');
-      var point = {
-          x: Math.round(Math.random() * 600) + 2,
-          y: Math.round(Math.random() * 600) + 2,
-          cluster: clusterID,
-          div: div
+    MAX_STEPS: 500,
+    MAX_TIME_SECONDS: 200.0,
+    INTERVAL: 1,
+    RANDOM_FUNCTION: function (field) {
+      return Math.round(Math.random() * 600) + 2;
+    },
+    FINISH_FUNCTION: function (initTime, clusteringTime, executedSteps) {
+      alert(initTime.toFixed(2) + " seconds: initialization time.\n" +
+      clusteringTime.toFixed(2) + " seconds: clustering time.\n" +
+      (initTime + clusteringTime).toFixed(2) + " seconds: total execution time.\n" +
+      executedSteps + " steps executed.");
+    },
+    NEW_CLUSTER_ENTITY_FUNCTION: function (index, cache) {
+      var getClusterStyle = function(colorIndex) {
+        var color = settings.colors[colorIndex];
+        return {
+          position: "absolute",
+          display: "block",
+          color: color,
+          border: "1px solid " + color
         };
-      div
-        .css({ position: 'absolute',
-                   left: point.x,
-                    top: point.y,
-                  color: cluster.consts.COLORS[clusterID] })
-        .text('o')
-        .attr('id', 'p' + i);
-      pointsDIV.append(div);
-      cluster.points.push(point);
+      };
+    
+      var clustersDiv = cache.clustersDiv || $("#clusters");
+      cache.clustersDiv = clustersDiv;
+      var div = $("<div><\/div>");
+      clustersDiv.append(div);
+      return div.css(getClusterStyle(index - 1))
+        .text(index + 1)
+        .attr("id", "c" + index);
+    },
+    UPDATE_CLUSTER_ENTITY_FUNCTION: function (entity, x, y, count) {
+      entity
+        .css({
+          left: Math.round(x) - entity.width() / 2,
+          top: Math.round(y) - entity.height() / 2
+        })
+        .text(count);
+    },
+    NEW_ITEM_ENTITY_FUNCTION: function (initialClusterId, itemId, item, cache) {
+      var newStyleForItem = function(item, color) {
+        return {
+          position: "absolute",
+          left: item.x,
+          top: item.y,
+          color: color
+        };
+      };
 
-      var curCluster = cluster.clusters[clusterID];
-      // Update the points average formula components for the cluster
+      var itemsDiv = cache.itemsDiv || $("#points");
+      cache.itemsDiv = itemsDiv;
+
+      var div = $("<div><\/div>");
+      itemsDiv.append(div);
+      var color = settings.colors[initialClusterId]
+      return div.css(newStyleForItem(item, color))
+        .text("o")
+        .attr("id", itemId);
+    },
+    UPDATE_ITEM_ENTITY_FUNCTION: function (item) {
+      item.entity.css("color", settings.colors[item.clusterId]);
+    },
+    BEFORE_STEP_FUNCTION: function (step, isLastStep) {
+    },
+    FIELDS: ["x", "y"]
+  };
+
+  var items;
+  var clusters;
+
+  var settings = {};
+
+  var interval = 0;
+  var startTime = 0;
+  var initCompleteTime = 0;
+  var executedSteps;
+
+  var valueIfArray = function(value) {
+    return Array.isArray(value) && value;
+  };
+
+  var valueIfPositiveInteger = function(value) {
+    return value && value.toString().match(/^[1-9]\d*$/) && parseInt(value, 10);
+  };
+
+  var valueIfInteger = function(value) {
+    return value === 0 ||
+      (value && value.toString().match(/^-?\d+$/) && parseInt(value, 10));
+  };
+
+  var valueIfFunction = function(value) {
+    var getType = {};
+    return value &&
+      getType.toString.call(value) === "[object Function]" &&
+      value;
+  };
+
+  var initSettings = function(customSettings) {
+    if (!customSettings || typeof customSettings !== "object") {
+      customSettings = {};
+    }
+
+    settings.colors =
+      valueIfArray(customSettings.colors) ||
+      defaults.COLORS;
+    settings.itemsCount =
+      valueIfPositiveInteger(customSettings.itemsCount) ||
+      defaults.ITEMS_COUNT;
+    settings.clustersCount =
+      valueIfPositiveInteger(customSettings.clustersCount) ||
+      defaults.CLUSTER_COUNT;
+    settings.maxSteps =
+      valueIfInteger(customSettings.maxSteps) ||
+      defaults.MAX_STEPS;
+    settings.maxTimeSeconds =
+      Number(customSettings.maxTimeSeconds) ||
+      defaults.MAX_TIME_SECONDS;
+    settings.interval =
+      Number(customSettings.interval) ||
+      defaults.INTERVAL;
+    settings.randomFunction =
+      valueIfFunction(customSettings.randomFunction) ||
+      defaults.RANDOM_FUNCTION;
+    settings.finishFunction =
+      valueIfFunction(customSettings.finishFunction) ||
+      defaults.FINISH_FUNCTION;
+    settings.updateClusterEntityFunction =
+      valueIfFunction(customSettings.updateClusterEntityFunction) ||
+      defaults.UPDATE_CLUSTER_ENTITY_FUNCTION;
+    settings.newClusterEntityFunction =
+      valueIfFunction(customSettings.newClusterEntityFunction) ||
+      defaults.NEW_CLUSTER_ENTITY_FUNCTION;
+    settings.newItemEntityFunction =
+      valueIfFunction(customSettings.newItemEntityFunction) ||
+      defaults.NEW_ITEM_ENTITY_FUNCTION;
+    settings.updateItemEntityFunction =
+      valueIfFunction(customSettings.updateItemEntityFunction) ||
+      defaults.UPDATE_ITEM_ENTITY_FUNCTION;
+    settings.beforeStepFunction =
+      valueIfFunction(customSettings.beforeStepFunction) ||
+      defaults.BEFORE_STEP_FUNCTION;
+    settings.fields = 
+      valueIfArray(customSettings.fields) ||
+      defaults.FIELDS;
+  };
+
+  var newCluster = function (entity) {
+    return { count: 0, x: 0, y: 0, sumX: 0, sumY: 0, entity: entity };
+  };
+
+  var initClusters = function(clustersCount) {
+    var clusterEntity;
+
+    var newClusterEntityFunction = settings.newClusterEntityFunction;
+    while (clusters.length < clustersCount) {
+      clusterEntity = newClusterEntityFunction(clusters.length + 1, cache);
+      clusters.push(newCluster(clusterEntity));
+    }
+  };
+
+  var newRandomItem = function(clusterId, randomFunc) {
+    var randomItem = { clusterId: clusterId };
+    var fields = settings.fields;
+    var field;
+
+    fields.forEach(function (field) {
+      randomItem[field] = randomFunc(field);
+    });
+
+    return randomItem;
+  };
+
+  var initItems = function(randomFunc) {
+    var itemId;
+    var clusterId;
+    var item;
+    var entity;
+    var curCluster;
+    var clustersCount = settings.clustersCount;
+    var itemsCount = settings.itemsCount;
+
+    while (items.length < itemsCount) {
+      itemId = items.length + 1;
+      // Assign an item to each cluster to divide them evenly.
+      clusterId = itemId % clustersCount;
+      item = newRandomItem(clusterId, randomFunc);
+      entity = settings.newItemEntityFunction(clusterId, "p" + itemId, item, cache);
+      item.entity = entity;
+      items.push(item);
+
+      curCluster = clusters[clusterId];
+      // Update the items average formula components for the cluster
       ++curCluster.count;
-      curCluster.sumX += point.x;
-      curCluster.sumY += point.y;
+      curCluster.sumX += item.x;
+      curCluster.sumY += item.y;
     }
-  },
+  };
 
-  start: function() {
-    cluster.initClusters();
-    cluster.initPoints();
-    cluster.calcClusters();
-    cluster.positionClusters();
-
-    cluster.startTime = new Date().getTime();
-
-    cluster.clusterStep();
-    cluster.ivl = setInterval(cluster.clusterStep, cluster.consts.INTERVAL_STEP);
-  },
-
-  clusterStep: function() {
-    // Reassign all points to clusters and report if any points moved.
-    var moved = cluster.recluster();
-    ++cluster.steps;
-    var timeElapsed = ((new Date().getTime() - cluster.startTime) / 1000);
-
-    // Comment the following two lines to skip updates during the process
-    // and speed things up.
-    cluster.positionClusters();
-
-    // If we're done or hit one of our set limits, stop.
-    if (moved == 0 ||
-        cluster.steps == cluster.consts.MAX_STEPS ||
-        timeElapsed >= cluster.consts.MAX_TIME_SEC) {
-      clearInterval(cluster.ivl);
-
-      // Update the results to screen.
-      cluster.paintPoints();
-      cluster.positionClusters();
-
-      alert('Done in ' + timeElapsed + ' seconds.\nSteps: ' + cluster.steps);
-    }
-  },
-
-  recluster: function() {
+  var reCluster = function() {
     var moved = 0;
+    var itemCluster;
+    var dX;
+    var dY;
+    var minDist;
+    var newDist;
+    var currentClusterId;
+    var targetCluster;
+    var targetClusterId;
 
-    for (var i = cluster.consts.POINTS_COUNT - 1; i >= 0; i += -1) {
-      var point = cluster.points[i];
-      var curCluster = cluster.clusters[point.cluster];
-      // If the cluster only has one point left - don't move the point.
+    items.forEach(function (item) {
+      currentClusterId = item.clusterId;
+      itemCluster = clusters[currentClusterId];
+      // If the cluster only has one item left - don't re-assign the item.
       // Otherwise, we lose that cluster.
-      if (curCluster.count <= 1) continue;
+      if (itemCluster.count <= 1) {
+        return;
+      }
 
-      var dX = point.x - curCluster.x;
-      var dY = point.y - curCluster.y;
+      dX = item.x - itemCluster.x;
+      dY = item.y - itemCluster.y;
 
       // Store current distance from center of cluster.
       // We're not using Sqrt as it's not required for relative comparisons.
-      var minDist = dX * dX + dY * dY;
-      var curClusterID = point.cluster;
-      var targetCluster = -1;
+      minDist = dX * dX + dY * dY;
 
-      for (var j = cluster.consts.CLUSTER_COUNT - 1; j >= 0; j += -1) {
-        if (j == curClusterID) continue;
+      targetCluster = false;
+      clusters.forEach(function (visitedCluster, visitedClusterId) {
+        if (visitedCluster === itemCluster) {
+          return;
+        }
 
-        var newCluster = cluster.clusters[j];
-
-        dX = point.x - newCluster.x;
-        dY = point.y - newCluster.y;
+        dX = item.x - visitedCluster.x;
+        dY = item.y - visitedCluster.y;
         // Get distance from center of the new cluster.
         // We're not using Sqrt as it's not required for relative comparisons.
         newDist = dX * dX + dY * dY;
         if (newDist < minDist) {
           minDist = newDist;
-          targetCluster = j;
+          targetCluster = visitedCluster;
+          targetClusterId = visitedClusterId;
         }
-      }
+      });
 
-      if (targetCluster != -1) {
-        // Update the points average formula components for the old cluster
-        curCluster.count += -1;
-        curCluster.sumX += -point.x;
-        curCluster.sumY += -point.y;
+      if (targetCluster) {
+        // Update the items average formula components for the old cluster
+        itemCluster.count += -1;
+        itemCluster.sumX += -item.x;
+        itemCluster.sumY += -item.y;
 
-        point.cluster = targetCluster;
-        point.div.css('color', cluster.consts.COLORS[targetCluster]);
+        item.clusterId = targetClusterId;
+        settings.updateItemEntityFunction(item);
 
         // Update our pointer to the new cluster
-        curCluster = cluster.clusters[point.cluster];
-        // Update the points average formula components for the new cluster
-        ++curCluster.count;
-        curCluster.sumX += point.x;
-        curCluster.sumY += point.y;
+        itemCluster = targetCluster;
+        // Update the items average formula components for the new cluster
+        ++itemCluster.count;
+        itemCluster.sumX += item.x;
+        itemCluster.sumY += item.y;
 
         ++moved;
       }
-    }
+    });
 
-    if (moved != 0) cluster.calcClusters();
+    if (moved) {
+      calcClusters();
+    }
 
     return moved;
-  },
+  };
 
-  calcClusters: function() {
-    for (var i = cluster.consts.CLUSTER_COUNT - 1; i >= 0; i += -1) {
-      var curCluster = cluster.clusters[i];
-      var count = curCluster.count;
+  var clusterStep = function() {
+    // Reassign all items to clusters and report if any items moved.
+    settings.beforeStepFunction(executedSteps, false);
+    var moved = reCluster();
+    ++executedSteps;
+    var finishedTime = Date.now()
+    var initTime = (initCompleteTime - startTime) / 1000;
+    var totalTime = (finishedTime - startTime) / 1000;
+    var clusteringTime = totalTime - initTime;
+
+    // Comment the following two lines to skip updates during the process
+    // and speed things up.
+    positionClusters();
+
+    // If we're done or hit one of our set limits, stop.
+    if (!moved ||
+        executedSteps === settings.maxSteps ||
+        totalTime >= settings.maxTimeSeconds) {
+      clearInterval(interval);
+      interval = 0;
+
+      // Update the results to screen.
+      settings.beforeStepFunction(executedSteps, true);
+      updateItemEntities();
+      positionClusters();
+
+      setTimeout(function () {
+        settings.finishFunction(initTime, clusteringTime, executedSteps);
+      }, 1);
+      return false;
+    } else {
+      return true;
+    }
+  };
+
+  var calcClusters = function() {
+    var count;
+
+    clusters.forEach(function (curCluster) {
+      count = curCluster.count;
       curCluster.x = curCluster.sumX / count;
       curCluster.y = curCluster.sumY / count;
-    }
-  },
+    });
+  };
 
-  paintPoints: function() {
-    for (var i = cluster.consts.POINTS_COUNT - 1; i >= 0; i += -1) {
-      var point = cluster.points[i];
-      point.div.css('color', cluster.consts.COLORS[point.cluster]);
-    }
-  },
+  var updateItemEntities = function() {
+    items.forEach(function (item) {
+      settings.updateItemEntityFunction(item);
+    });
+  };
 
-  positionClusters: function() {
-    for (var i = cluster.consts.CLUSTER_COUNT - 1; i >= 0; i += -1) {
-      var curCluster = cluster.clusters[i];
-      curCluster.div
-        .css({ left: Math.round(curCluster.x), top: Math.round(curCluster.y) })
-        .text(curCluster.count);
+  var positionClusters = function() {
+    clusters.forEach(function (curCluster) {
+      settings.updateClusterEntityFunction(curCluster.entity, curCluster.x, curCluster.y, curCluster.count);
+    });
+  };
+
+  var initClustering = function() {
+    if (interval) {
+      clearInterval(interval);
+      interval = 0;
     }
+    startTime = Date.now();
+    executedSteps = 0;
+    items = [];
+    clusters = [];
+  };
+
+  var timeInitComplete = function() {
+    initCompleteTime = Date.now();
   }
-};
+
+  return {
+    start: function (customSettings) {
+      initClustering();
+      initSettings(customSettings);
+      initClusters(settings.clustersCount);
+      initItems(settings.randomFunction);
+      calcClusters();
+      positionClusters();
+      timeInitComplete();
+
+      if (clusterStep()) {
+        interval = setInterval(clusterStep, settings.interval);
+      }
+    }
+  };
+}());
 
 $(document).ready(function () {
-    cluster.start();
+    var canvas;
+    var colors = [
+      "#FF0000", "#00FF00", "#0000FF", "#FF00FF",
+      "#33AA88", "#FF8800", "#0088FF", "#003333",
+      "#AA00AA", "#8800FF"
+    ];
+
+    var drawPoint = function(x, y, color) {
+      context.clearRect(x - 1, y - 1, 2, 2);
+      context.beginPath();
+      context.rect(x - 1, y - 1, 2, 2);
+      context.fillStyle = color;
+      context.fill();
+      context.closePath();
+    };
+
+    var randomScaled = function () { return Math.pow(Math.random(), .5) }
+
+    var canvasTag = $("<canvas><\/canvas>");
+    canvasTag.attr("id", "clusteringCanvas");
+    var clustersDiv = $("#clusters");
+    clustersDiv.append(canvasTag);
+    canvas = canvasTag[0];
+    var context = canvas.getContext('2d');
+    context.canvas.height = clustersDiv.height();
+    context.canvas.width = clustersDiv.width();
+
+    cluster.start({
+      colors: colors,
+      itemsCount: 20000,
+      interval: 1,
+      newItemEntityFunction: function (initialClusterId, itemId, item, cache) {
+        drawPoint(item.x, item.y, colors[initialClusterId % colors.length]);
+      },
+      updateItemEntityFunction: function (item) {
+        drawPoint(item.x, item.y, colors[item.clusterId % colors.length]);
+      },
+      randomFunction: (function() {
+        var t = 0; return function inc(field) { t += 0.1; if (t >= 1) { t -= 1 } return (field == "x") ? Math.round((t + randomScaled() / 10 - 0.1) * 600) + 2 : (randomScaled() + t) * 300; }}
+        )(),
+      beforeStepFunction: function (step, isLastStep) {
+        if (isLastStep) {
+          context.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+    });
   });
