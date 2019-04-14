@@ -313,13 +313,10 @@ var cluster = (function () {
     }
   };
 
-  var calcClusters = function() {
-    var count;
-
+  var calculateClusters = function() {
     clusters.forEach(function (curCluster) {
-      count = curCluster.count;
-      curCluster.x = curCluster.sumX / count;
-      curCluster.y = curCluster.sumY / count;
+      curCluster.x = curCluster.sumX / curCluster.count;
+      curCluster.y = curCluster.sumY / curCluster.count;
     });
   };
 
@@ -356,7 +353,7 @@ var cluster = (function () {
       initSettings(customSettings);
       initClusters(settings.clustersCount);
       initItems(settings.randomFunction);
-      calcClusters();
+      calculateClusters();
       positionClusters();
       timeInitComplete();
 
